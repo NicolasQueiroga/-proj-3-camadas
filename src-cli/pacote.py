@@ -2,13 +2,13 @@ from numpy import arange
 
 class Pacote:
     def __init__(self, byteArrayHead, byteArrayPayload):
-        self.head = Head(byteArrayHead)
-        self.payload = Payload(byteArrayPayload)
+        self.head = byteArrayHead
+        self.payload = byteArrayPayload
         self.EOP = b'/x4C/x4F/x56/x55'
         
     def build_pacote(self):
         pacote = b''
-        pacote += self.head.byteHead + self.payload.bytePayload + self.EOP
+        pacote += self.head + self.payload + self.EOP
         return pacote
 
 class Mensagem():
