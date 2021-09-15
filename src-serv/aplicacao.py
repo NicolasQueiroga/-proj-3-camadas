@@ -60,7 +60,7 @@ class Server:
         self.FLAGS = {'ENABLED': False,
                       'GOT_HEAD': False,
                       'GOT_FILE_TYPE': False,
-                      'GOT_HEAD_INFO': False,
+                      'CHECK_HEAD': False,
                       'SENT_HS_RESPONSE': False,  
                       'HS_PAYLOAD': False,
                       'ERROR': False,
@@ -71,7 +71,7 @@ class Server:
                        'disable_com': '',
                        'read_pkg': '',
                        'read_head_ok': '', 'read_head_!ok': '',
-                       'get_head_1': '', 'hs': '', 'get_head_2': '', 'get_head_!ok': '',
+                       'got_hs': '', 'sent_hs': '', 'got_data': '', 'sent_dataOK': '', 'check_head_!ok': '',
                        '': ''}
 
     def status(self, msg):
@@ -94,8 +94,8 @@ class Server:
             return 'error'
 
         if self.FLAGS['GOT_HEAD']:
-            self.get_head_infos()
-        if self.FLAGS['GOT_HEAD_INFO']:
+            self.check_head()
+        if self.FLAGS['CHECK_HEAD']:
             self.read_payload()
         if self.FLAGS['GOT_PAYLOAD']:
             self.check_eop()
@@ -114,7 +114,7 @@ class Server:
         self.status(2)
         self.FLAGS['GOT_HEAD'] = True
 
-    def get_head_infos(self):
+    def check_head(self):
         if self.msg_type == b'\x01' and not self.FLAGS['SENT_HS_RESPONSE']:
             head_response_list = [self.msg_type_dict['handshake-response'], self.cli_id, self.serv_id,
                                   self.msg_id, self.pkgs_qty, self.pkg_id, self.payload_size, b'\x00\x00\x00']
@@ -123,7 +123,7 @@ class Server:
             self.com1.sendData(head_response)
             self.status(5)
             self.FLAGS['SENT_HS_RESPONSE'] = True
-            self.FLAGS['GOT_HEAD_INFO'] = True
+            self.FLAGS['CHECK_HEAD'] = True
             self.FLAGS['HS_PAYLOAD'] = True
         elif self.msg_type == b'\x03' and self.FLAGS['SENT_HS_RESPONSE']:
             self.status(3)
