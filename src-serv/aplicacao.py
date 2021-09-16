@@ -8,9 +8,6 @@
 
 from enlace import *
 import timeit
-from numpy import arange
-from PIL import Image
-from io import BytesIO
 
 
 class Server:
