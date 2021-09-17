@@ -1,34 +1,28 @@
 from numpy import arange
 
-class Pacote:
-    def __init__(self, byteArrayHead, byteArrayPayload):
-        self.head = byteArrayHead
-        self.payload = byteArrayPayload
-        self.EOP = b'/x4C/x4F/x56/x55'
-        
-    def build_pacote(self):
-        pacote = b''
-        pacote += self.head + self.payload + self.EOP
-        return pacote
-
 class Mensagem():
     def __init__(self, data_path):
-        with open(data_path, "rb") as image:
+        with open('src-cli/'+data_path, "rb") as image:
             f = image.read()
             self.mensagem = bytearray(f)
             print('\n---> Imagem convertida em bytes\n')
+            #print(self.mensagem)
 
     def construir_payloads(self):
         lista_payloads=[]
         payload = b''
         FLAG = 100
         for byte in self.mensagem:
-            if FLAG >= 100:
+            #print(FLAG)
+            if FLAG >= 114:
                 if payload != b'':
                     lista_payloads.append(payload)
+                    #print(payload)
                 FLAG = 0
-                payload = byte
+                payload = int(byte).to_bytes(1,'big')
             else:
-                payload += byte
+                payload += int(byte).to_bytes(1,'big')
                 FLAG += 1
+        if payload != b'':
+            lista_payloads.append(payload)
         return lista_payloads
