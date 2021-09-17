@@ -7,6 +7,7 @@
 
 
 from enlace import *
+import os
 import timeit
 
 
@@ -14,7 +15,7 @@ class Server:
 
     def __init__(self) -> None:
         '''
-
+            Contrutor do servidor
         '''
 
         # Inicializando objeto "com1"
@@ -34,13 +35,13 @@ class Server:
         self.EOP = b'\x4C\x4F\x56\x55'
 
         # Inicializando atributos de apoio
-        self.file_type = ''
-        self.pkg_size = int(128).to_bytes(1, 'big')
+        # self.file_type = ''
+        # self.pkg_size = int(128).to_bytes(1, 'big')
         self.pkg_counter = 0
         self.eop_size = 4
-        self.eop = b''
+        # self.eop = b''
         self.head_size = 10
-        self.head = b''
+        # self.head = b''
         self.msg_id_list = []
         self.pkgs_qty_list = []
         self.pkg_id_list = []
@@ -64,11 +65,12 @@ class Server:
                       'GOT_EOP': False,
                       'END_OF_MSG': False,
                       'GOT_SIZE': False,
-                      'FIRST_RUN': True}
+                      'FIRST_RUN': True,
+                      'PKG_ERROR': False}
 
         self.STATUS = {'activate_com_ok': 'Comunication activated', 'activate_com_!ok': 'Comunication NOT activated',
                        'disable_com': 'Comunication disabled',
-                       'read_pkg': 'Reading package',
+                       'read_pkg': 'Reading package', 'pkg_id_error': 'Package with ID ERROR',
                        'read_head_ok': 'Head ok', 'read_head_!ok': 'Head NOT ok',
                        'got_hs': 'Handshake received', 'sent_hs': 'Handshake response sent', 'got_data': 'Data received', 'sent_dataOK': 'Sent data received confirmation', 'check_head_!ok': 'Problem with head',
                        'got_pl': 'Payload received', 'got_filetype': 'Filetype received', 'read_payload_!ok': 'Payload NOT received', 'no_pl': 'No payload from HS',
@@ -79,6 +81,7 @@ class Server:
 
     def activate_comunication(self):
         self.com1.enable()
+        self.com1.rx.clearBuffer()
         self.status('activate_com_ok')
         self.FLAGS['ENABLED'] = True
 
@@ -87,39 +90,34 @@ class Server:
         self.status('disable_com')
         self.FLAGS['ENABLED'] = False
 
-    def init(self):
+    def init(self, all=False):
         self.FLAGS['GOT_HEAD'] = False
         self.FLAGS['CHECK_HEAD'] = False
         self.FLAGS['GOT_PAYLOAD'] = False
         self.FLAGS['END_OF_MSG'] = False
         self.FLAGS['GOT_EOP'] = False
+        self.FLAGS['PKG_ERROR'] = False
+            
 
     def read_pkg(self):
-        self.com1.rx.clearBuffer()
         self.init()
         self.status('read_pkg')
 
-        if self.FLAGS['ENABLED'] and not self.FLAGS['ERROR']:
-            self.read_head()
-        else:
-            return False
+        if not self.FLAGS['PKG_ERROR']:
+            if self.FLAGS['ENABLED'] and not self.FLAGS['ERROR']:
+                self.read_head()
 
-        if self.FLAGS['GOT_HEAD'] and not self.FLAGS['ERROR']:
-            self.read_payload()
-        else:
-            return False
+            if self.FLAGS['GOT_HEAD'] and not self.FLAGS['ERROR']:
+                self.read_payload()
 
-        if self.FLAGS['GOT_PAYLOAD'] and not self.FLAGS['ERROR']:
-            self.check_eop()
-        else:
-            return False
+            if self.FLAGS['GOT_PAYLOAD'] and not self.FLAGS['ERROR']:
+                self.check_eop()
 
-        if self.FLAGS['GOT_EOP'] and not self.FLAGS['ERROR']:
+        if self.FLAGS['PKG_ERROR'] or (self.FLAGS['GOT_EOP'] and not self.FLAGS['ERROR']):
             self.ans()
-        else:
-            return False
 
         if self.FLAGS['END_OF_MSG'] and not self.FLAGS['ERROR']:
+            # self.init(all=True)
             self.disable_comunications()
             return False
         else:
@@ -131,9 +129,8 @@ class Server:
             self.msg_type = self.head[0].to_bytes(1, 'big')
             self.cli_id = self.head[1].to_bytes(1, 'big')
             self.serv_id = self.head[2].to_bytes(1, 'big')
-            self.msg_id = self.head[3].to_bytes(1, 'big')
             self.pkgs_qty = self.head[4].to_bytes(1, 'big')
-            self.pkg_id = self.head[5].to_bytes(1, 'big')
+            self.pkg_id = self.head[5]
             self.payload_size = self.head[6]
 
             # mudar para dicio {pkg_id: {}}
@@ -142,13 +139,23 @@ class Server:
             self.pkg_id_list.append(self.pkg_id)
             if self.FLAGS['GOT_SIZE']:
                 self.pkg_counter = int.from_bytes(self.pkgs_qty, 'big')
+                self.msg_id = self.head[3].to_bytes(1, 'big')
 
             if self.msg_type == b'\x01' and self.FLAGS['FIRST_RUN']:
                 self.pkg_counter += 2
                 self.FLAGS['HS_PAYLOAD'] = True
+                self.last_pkg_id = -1
+                self.FLAGS['GOT_HEAD'] = True
+                self.status('read_head_ok')
 
-            self.status('read_head_ok')
-            self.FLAGS['GOT_HEAD'] = True
+            if self.msg_type == b'\x03':
+                if self.pkg_id == self.last_pkg_id + 1:
+                    self.FLAGS['GOT_HEAD'] = True
+                    self.status('read_head_ok')
+                else:
+                    self.FLAGS['PKG_ERROR'] = True
+                    self.status('pkg_id_error')
+
         except Exception as erro:
             self.FLAGS['ERROR'] = True
 
@@ -158,7 +165,7 @@ class Server:
                 self.status('no_pl')
                 self.FLAGS['GOT_SIZE'] = True
                 self.FLAGS['FIRST_RUN'] = False
-            elif self.pkg_id == b'\x00' and not self.FLAGS['GOT_FILE_TYPE']:
+            elif self.pkg_id == 0 and not self.FLAGS['GOT_FILE_TYPE']:
                 self.file_type = self.com1.getData(self.payload_size)[
                     0].decode('ascii')
                 self.FLAGS['GOT_FILE_TYPE'] = True
@@ -180,36 +187,50 @@ class Server:
     def check_eop(self):
         try:
             self.eop = self.com1.getData(self.eop_size)[0]
-            self.FLAGS['GOT_EOP'] = True
             if self.eop == self.EOP:
-
+                self.FLAGS['GOT_EOP'] = True
                 self.pkg_counter -= 1
                 if self.pkg_counter == 0:
                     self.FLAGS['END_OF_MSG'] = True
                     self.save_file()
+            else:
+                self.FLAGS['PKG_ERROR'] = True
         except Exception as erro:
             self.status('eop_error')
             self.FLAGS['ERROR'] = True
 
     def ans(self):
         try:
-            if self.msg_type == b'\x01' and not self.FLAGS['SENT_HS_RESPONSE']:
-                self.status('got_hs')
-                head_response_list = [self.msg_type_dict['handshake-response'],
-                                      self.cli_id, self.serv_id, self.msg_id, b'\x00\x00\x00\x00\x00\x00']
-                head_response = b''.join(head_response_list)
+            if self.FLAGS['PKG_ERROR']:
+                time.sleep(0.15)
+                self.com1.rx.clearBuffer()
+                head = [self.msg_type_dict['error'],
+                        self.cli_id, self.serv_id, self.msg_id, b'\x00', int(self.last_pkg_id+1).to_bytes(1, 'big'), b'\x00\x00\x00\x00']
+                send_head = b''.join(head)
+                self.com1.sendData(send_head)
+                self.FLAGS['PKG_ERROR'] = False
+            else:
+                if self.msg_type == b'\x01' and not self.FLAGS['SENT_HS_RESPONSE']:
+                    self.status('got_hs')
+                    head_response_list = [self.msg_type_dict['handshake-response'],
+                                          self.cli_id, self.serv_id, self.msg_id, b'\x00\x00\x00\x00\x00\x00\x00']
+                    head_response = b''.join(head_response_list)
 
-                self.com1.sendData(head_response)
-                self.status('sent_hs')
-                self.FLAGS['HS_PAYLOAD'] = False
-                self.FLAGS['SENT_HS_RESPONSE'] = True
-            elif self.msg_type == b'\x03' and self.FLAGS['SENT_HS_RESPONSE']:
-                self.status('got_data')
-                dataOK_response_list = [self.msg_type_dict['data-ok'], self.cli_id,
-                                        self.serv_id, self.msg_id, b'\x00\x00\x00\x00\x00\x00']
-                dataOK_response = b''.join(dataOK_response_list)
-                self.com1.sendData(dataOK_response)
-                self.status('sent_dataOK')
+                    self.com1.rx.clearBuffer()
+                    self.com1.sendData(head_response)
+                    self.status('sent_hs')
+                    self.FLAGS['HS_PAYLOAD'] = False
+                    self.FLAGS['SENT_HS_RESPONSE'] = True
+                elif self.msg_type == b'\x03' and self.FLAGS['SENT_HS_RESPONSE']:
+                    self.status('got_data')
+                    dataOK_response_list = [self.msg_type_dict['data-ok'], self.cli_id,
+                                            self.serv_id, self.msg_id, b'\x00\x00\x00\x00\x00\x00']
+                    dataOK_response = b''.join(dataOK_response_list)
+
+                    self.com1.rx.clearBuffer()
+                    self.com1.sendData(dataOK_response)
+                    self.status('sent_dataOK')
+                    self.last_pkg_id = self.pkg_id
         except Exception as erro:
             self.status('check_head_!ok')
             self.FLAGS['ERROR'] = True
@@ -218,13 +239,15 @@ class Server:
 def main():
     ans = ''
     try:
-        server = Server()
-        server.activate_comunication()
-        while (server.read_pkg()):
-            print('---> pkg OK!\n\n')
+        while True:
+            server = Server()
+            server.activate_comunication()
+            while (server.read_pkg()):
+                print('---> pkg OK!\n\n')
+            print()
 
-        if ans == 'error':
-            print('ERROOOOO')
+            if ans == 'error':
+                print('ERROOOOO')
 
     except Exception as erro:
         print("ops! :-\\")
