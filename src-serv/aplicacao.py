@@ -19,7 +19,7 @@ class Server:
         '''
 
         # Inicializando objeto "com1"
-        self.serial_number = "/dev/ttyACM0"
+        self.serial_number = "/dev/cu.usbmodem1412301"
         self.com1 = enlace(self.serial_number)
 
         # Inicializando atributos de "head"
@@ -181,7 +181,7 @@ class Server:
 
     def save_file(self):
         file = self.file_type
-        with open("resources/" + file, "wb") as bin_file:
+        with open("resources/server/" + file, "wb") as bin_file:
             bin_file.write(self.payload)
 
     def check_eop(self):

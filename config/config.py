@@ -1,2 +1,0 @@
-PROTOCOLO = ['tipo-mensagem','id-client','id-server','id-msg','qnt-pacotes','id-pacote','tamanho-payload','byte8','byte9','byte10']
-TIPO_MENSAGEM = {'handshake':b'\x01','handshake-response':b'\x02','data':b'\x03','data-ok':b'\x04','timeout':b'\x05','error':b'\x06'}
