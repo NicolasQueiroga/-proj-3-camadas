@@ -1,6 +1,6 @@
-#Projeto 3 de Camada Física da Computação - comp
+# Projeto 3 de Camada Física da Computação - comp
 
-##Dupla
+## Dupla
 - Francisco Pinheiro Janela
 - Nicolas Maciel Queiroga
 
