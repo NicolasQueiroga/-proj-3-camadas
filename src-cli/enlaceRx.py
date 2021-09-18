@@ -12,6 +12,7 @@ import time
 
 # Threads
 import threading
+from typing_extensions import runtime
 
 # Class
 class RX(object):
@@ -68,8 +69,13 @@ class RX(object):
         return(b)
 
     def getNData(self, size):
+        start_time = time.time()
         while(self.getBufferLen() < size):
-            time.sleep(0.05)                 
+            time.sleep(0.05)
+            runtime = time.time() - start_time
+            if runtime > 5:
+                print('---> ####### RUNTIME #######')
+                return b'\x00\x00'
         return(self.getBuffer(size))
 
 

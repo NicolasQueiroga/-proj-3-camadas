@@ -9,7 +9,7 @@ class Server:
         '''
 
         # Inicializando objeto "com1"
-        self.serial_number = "/dev/ttyACM0"
+        self.serial_number = "/dev/cu.usbmodem1412301"
         self.com1 = enlace(self.serial_number)
 
         # Inicializando atributos de "head"
