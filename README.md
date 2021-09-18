@@ -4,3 +4,8 @@
 	<li>Francisco Pinheiro Janela</li>
 	<li>Nicolas Maciel Queiroga</li>
 </ul>
+<h3>Arquivos</h3>
+<ul>
+	<li>Para rodar a aplicação do cliente utilize `aplicacao.py` na pasta `src-cli`.</li>
+	<li>Para rodar a aplicação do server utilize `aplicacao.py` na pasta `src-serv`.</li>
+</ul>
