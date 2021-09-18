@@ -17,7 +17,7 @@ import numpy as np
 from PIL import Image
 from io import BytesIO
 from pacote import Mensagem
-from functions import *
+from clientFunctions import *
 from tqdm import tqdm
 
 
@@ -27,18 +27,18 @@ serialName = "/dev/cu.usbmodem1412401"
 def main():
     try:
         # Test declaration
-        TEST = True
+        TEST_RUBRICA_3 = False
+        TEST_RUBRICA_4 = False
+        TESTOU_RUBRICA_4 = False
         # Declaração de Variáveis:
         com1 = enlace(serialName)
 
-        TIPO_MENSAGEM = {'handshake':b'\x01','handshake-response':b'\x02','data':b'\x03','data-ok':b'\x04','timeout':b'\x05','error':b'\x06'}
         id_client = b'\x14'
         id_server = b'\x15'
         id_mensagem = int(random.randint(0,255)).to_bytes(1,'big')
 
         headByteArray = b''
         payloadByteArray = b''
-        EOP = b'\x4C\x4F\x56\x55'
 
         FILE = 'sams.webp'
 
@@ -95,12 +95,19 @@ def main():
         i = 0
         pbar = tqdm(total=len(lista_payloads),unit='packages',desc='Packages Enviados:')
         while i < len(lista_payloads):
+            if TEST_RUBRICA_3:
+                time.sleep(0.2)
             RECEIVED = False
-            if TEST and i == 4:
+            if TEST_RUBRICA_3 and i == 4:
+                print('\n---> Alterei o id de um pacote!\n')
                 i -= 1   
             #print(i)
             pkg_id = i+1
-            pkg = generatePkg(id_client,id_server,id_mensagem,int(len(lista_payloads)+1).to_bytes(1,'big'),pkg_id,lista_payloads)
+            if TEST_RUBRICA_4 and not TESTOU_RUBRICA_4 and i == 8:
+                print('\n---> O tamanho do payload foi adulterado para erro!\n')
+                pkg = generatePkg(id_client,id_server,id_mensagem,int(len(lista_payloads)+1).to_bytes(1,'big'),pkg_id,lista_payloads,TEST_RUBRICA_4)
+            else:
+                pkg = generatePkg(id_client,id_server,id_mensagem,int(len(lista_payloads)+1).to_bytes(1,'big'),pkg_id,lista_payloads)
             com1.tx.fisica.flush()
             com1.rx.clearBuffer()
             time.sleep(0.05)
@@ -136,7 +143,7 @@ def main():
         pbar.close()
         print("\n-----------------------------")
         print("---> Comunicação encerrada")
-        print("-----------------------------")
+        print("-----------------------------\n")
         com1.disable()
 
 

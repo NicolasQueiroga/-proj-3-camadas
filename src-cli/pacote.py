@@ -2,10 +2,10 @@ from numpy import arange
 
 class Mensagem():
     def __init__(self, data_path):
-        with open('src-cli/'+data_path, "rb") as image:
+        with open('resources/client/'+data_path, "rb") as image:
             f = image.read()
             self.mensagem = bytearray(f)
-            print('\n---> Imagem convertida em bytes\n')
+            #print('\n---> Imagem convertida em bytes\n')
             #print(self.mensagem)
 
     def construir_payloads(self):
