@@ -6,93 +6,254 @@
 ####################################################
 
 
-# esta é a camada superior, de aplicação do seu software de comunicação serial UART.
-# para acompanhar a execução e identificar erros, construa prints ao longo do código!
-
-
 from enlace import *
+import os
 import timeit
-import numpy as np
-from PIL import Image
-from io import BytesIO
 
 
-# voce deverá descomentar e configurar a porta com através da qual ira fazer comunicaçao
-#   para saber a sua porta, execute no terminal :
-#   python -m serial.tools.list_ports
-# se estiver usando windows, o gerenciador de dispositivos informa a porta
+class Server:
 
-serialName = "/dev/ttyACM0"           # Ubuntu (variacao de)
+    def __init__(self) -> None:
+        '''
+            Contrutor do servidor
+        '''
+
+        # Inicializando objeto "com1"
+        self.serial_number = "/dev/ttyACM0"
+        self.com1 = enlace(self.serial_number)
+
+        # Inicializando atributos de "head"
+        self.msg_type = b''
+        self.cli_id = b''
+        self.serv_id = b''
+        self.msg_id = b''
+        self.pkgs_qty = b''
+        self.pkg_id = b''
+        self.payload_size = b''
+
+        # Inicializando atributo de EOP
+        self.EOP = b'\x4C\x4F\x56\x55'
+
+        # Inicializando atributos de apoio
+        # self.file_type = ''
+        # self.pkg_size = int(128).to_bytes(1, 'big')
+        self.pkg_counter = 0
+        self.eop_size = 4
+        # self.eop = b''
+        self.head_size = 10
+        # self.head = b''
+        self.msg_id_list = []
+        self.pkgs_qty_list = []
+        self.pkg_id_list = []
+        self.payload = b''
+
+        self.msg_type_dict = {'handshake': b'\x01',
+                              'handshake-response': b'\x02',
+                              'data': b'\x03',
+                              'data-ok': b'\x04',
+                              'timeout': b'\x05',
+                              'error': b'\x06'}
+
+        self.FLAGS = {'ENABLED': False,
+                      'GOT_HEAD': False,
+                      'GOT_FILE_TYPE': False,
+                      'CHECK_HEAD': False,
+                      'SENT_HS_RESPONSE': False,
+                      'HS_PAYLOAD': False,
+                      'ERROR': False,
+                      'GOT_PAYLOAD': False,
+                      'GOT_EOP': False,
+                      'END_OF_MSG': False,
+                      'GOT_SIZE': False,
+                      'FIRST_RUN': True,
+                      'PKG_ERROR': False}
+
+        self.STATUS = {'activate_com_ok': 'Comunication activated', 'activate_com_!ok': 'Comunication NOT activated',
+                       'disable_com': 'Comunication disabled',
+                       'read_pkg': 'Reading package', 'pkg_id_error': 'Package with ID ERROR',
+                       'read_head_ok': 'Head ok', 'read_head_!ok': 'Head NOT ok',
+                       'got_hs': 'Handshake received', 'sent_hs': 'Handshake response sent', 'got_data': 'Data received', 'sent_dataOK': 'Sent data received confirmation', 'check_head_!ok': 'Problem with head',
+                       'got_pl': 'Payload received', 'got_filetype': 'Filetype received', 'read_payload_!ok': 'Payload NOT received', 'no_pl': 'No payload from HS',
+                       'eop_error': 'EOP error'}
+
+    def status(self, msg):
+        print(f'---> {self.STATUS[msg]}!')
+
+    def activate_comunication(self):
+        self.com1.enable()
+        self.com1.rx.clearBuffer()
+        self.status('activate_com_ok')
+        self.FLAGS['ENABLED'] = True
+
+    def disable_comunications(self):
+        self.com1.disable()
+        self.status('disable_com')
+        self.FLAGS['ENABLED'] = False
+
+    def init(self, all=False):
+        self.FLAGS['GOT_HEAD'] = False
+        self.FLAGS['CHECK_HEAD'] = False
+        self.FLAGS['GOT_PAYLOAD'] = False
+        self.FLAGS['END_OF_MSG'] = False
+        self.FLAGS['GOT_EOP'] = False
+        self.FLAGS['PKG_ERROR'] = False
+            
+
+    def read_pkg(self):
+        self.init()
+        self.status('read_pkg')
+
+        if not self.FLAGS['PKG_ERROR']:
+            if self.FLAGS['ENABLED'] and not self.FLAGS['ERROR']:
+                self.read_head()
+
+            if self.FLAGS['GOT_HEAD'] and not self.FLAGS['ERROR']:
+                self.read_payload()
+
+            if self.FLAGS['GOT_PAYLOAD'] and not self.FLAGS['ERROR']:
+                self.check_eop()
+
+        if self.FLAGS['PKG_ERROR'] or (self.FLAGS['GOT_EOP'] and not self.FLAGS['ERROR']):
+            self.ans()
+
+        if self.FLAGS['END_OF_MSG'] and not self.FLAGS['ERROR']:
+            # self.init(all=True)
+            self.disable_comunications()
+            return False
+        else:
+            return True
+
+    def read_head(self):
+        try:
+            self.head = self.com1.getData(self.head_size)[0]
+            self.msg_type = self.head[0].to_bytes(1, 'big')
+            self.cli_id = self.head[1].to_bytes(1, 'big')
+            self.serv_id = self.head[2].to_bytes(1, 'big')
+            self.pkgs_qty = self.head[4].to_bytes(1, 'big')
+            self.pkg_id = self.head[5]
+            self.payload_size = self.head[6]
+
+            # mudar para dicio {pkg_id: {}}
+            self.msg_id_list.append(self.msg_id)
+            self.pkgs_qty_list.append(self.pkgs_qty)
+            self.pkg_id_list.append(self.pkg_id)
+            if self.FLAGS['GOT_SIZE']:
+                self.pkg_counter = int.from_bytes(self.pkgs_qty, 'big')
+                self.msg_id = self.head[3].to_bytes(1, 'big')
+
+            if self.msg_type == b'\x01' and self.FLAGS['FIRST_RUN']:
+                self.pkg_counter += 2
+                self.FLAGS['HS_PAYLOAD'] = True
+                self.last_pkg_id = -1
+                self.FLAGS['GOT_HEAD'] = True
+                self.status('read_head_ok')
+
+            if self.msg_type == b'\x03':
+                if self.pkg_id == self.last_pkg_id + 1:
+                    self.FLAGS['GOT_HEAD'] = True
+                    self.status('read_head_ok')
+                else:
+                    self.FLAGS['PKG_ERROR'] = True
+                    self.status('pkg_id_error')
+
+        except Exception as erro:
+            self.FLAGS['ERROR'] = True
+
+    def read_payload(self):
+        try:
+            if self.FLAGS['HS_PAYLOAD']:
+                self.status('no_pl')
+                self.FLAGS['GOT_SIZE'] = True
+                self.FLAGS['FIRST_RUN'] = False
+            elif self.pkg_id == 0 and not self.FLAGS['GOT_FILE_TYPE']:
+                self.file_type = self.com1.getData(self.payload_size)[
+                    0].decode('ascii')
+                self.FLAGS['GOT_FILE_TYPE'] = True
+                self.FLAGS['GOT_SIZE'] = False
+                self.status('got_filetype')
+            else:
+                self.payload += self.com1.getData(self.payload_size)[0]
+                self.status('got_pl')
+            self.FLAGS['GOT_PAYLOAD'] = True
+        except Exception as erro:
+            self.status('read_payload_!ok')
+            self.FLAGS['ERROR'] = True
+
+    def save_file(self):
+        file = self.file_type
+        with open("resources/" + file, "wb") as bin_file:
+            bin_file.write(self.payload)
+
+    def check_eop(self):
+        try:
+            self.eop = self.com1.getData(self.eop_size)[0]
+            if self.eop == self.EOP:
+                self.FLAGS['GOT_EOP'] = True
+                self.pkg_counter -= 1
+                if self.pkg_counter == 0:
+                    self.FLAGS['END_OF_MSG'] = True
+                    self.save_file()
+            else:
+                self.FLAGS['PKG_ERROR'] = True
+        except Exception as erro:
+            self.status('eop_error')
+            self.FLAGS['ERROR'] = True
+
+    def ans(self):
+        try:
+            if self.FLAGS['PKG_ERROR']:
+                time.sleep(0.15)
+                self.com1.rx.clearBuffer()
+                head = [self.msg_type_dict['error'],
+                        self.cli_id, self.serv_id, self.msg_id, b'\x00', int(self.last_pkg_id+1).to_bytes(1, 'big'), b'\x00\x00\x00\x00']
+                send_head = b''.join(head)
+                self.com1.sendData(send_head)
+                self.FLAGS['PKG_ERROR'] = False
+            else:
+                if self.msg_type == b'\x01' and not self.FLAGS['SENT_HS_RESPONSE']:
+                    self.status('got_hs')
+                    head_response_list = [self.msg_type_dict['handshake-response'],
+                                          self.cli_id, self.serv_id, self.msg_id, b'\x00\x00\x00\x00\x00\x00\x00']
+                    head_response = b''.join(head_response_list)
+
+                    self.com1.rx.clearBuffer()
+                    self.com1.sendData(head_response)
+                    self.status('sent_hs')
+                    self.FLAGS['HS_PAYLOAD'] = False
+                    self.FLAGS['SENT_HS_RESPONSE'] = True
+                elif self.msg_type == b'\x03' and self.FLAGS['SENT_HS_RESPONSE']:
+                    self.status('got_data')
+                    dataOK_response_list = [self.msg_type_dict['data-ok'], self.cli_id,
+                                            self.serv_id, self.msg_id, b'\x00\x00\x00\x00\x00\x00']
+                    dataOK_response = b''.join(dataOK_response_list)
+
+                    self.com1.rx.clearBuffer()
+                    self.com1.sendData(dataOK_response)
+                    self.status('sent_dataOK')
+                    self.last_pkg_id = self.pkg_id
+        except Exception as erro:
+            self.status('check_head_!ok')
+            self.FLAGS['ERROR'] = True
 
 
 def main():
+    ans = ''
     try:
-        # declaramos um objeto do tipo enlace com o nome "com". Essa é a camada inferior à aplicação. Observe que um parametro
-        # para declarar esse objeto é o nome da porta.
-        com1 = enlace(serialName)
+        while True:
+            server = Server()
+            server.activate_comunication()
+            while (server.read_pkg()):
+                print('---> pkg OK!\n\n')
+            print()
 
-        # Ativa comunicacao. Inicia os threads e a comunicação seiral
-        com1.enable()
-        t1 = timeit.default_timer()
-
-        # Se chegamos até aqui, a comunicação foi aberta com sucesso. Faça um print para informar.
-        print('\n---> A comunicação foi aberta com sucesso!')
-        # aqui você deverá gerar os dados a serem transmitidos.
-        # seus dados a serem transmitidos são uma lista de bytes a serem transmitidos. Gere esta lista com o
-        # nome de txBuffer. Esla sempre irá armazenar os dados a serem enviados.
-        with open('resources/img.bmp', 'rb') as image:
-            f = image.read()
-            txBuffer = bytearray(f)
-
-        # faça aqui uma conferência do tamanho do seu txBuffer, ou seja, quantos bytes serão enviados.
-        img_size = len(f)
-        print(f'---> Tamanho da imagem: {img_size} bytes')
-
-        # finalmente vamos transmitir os tados. Para isso usamos a funçao sendData que é um método da camada enlace.
-        # faça um print para avisar que a transmissão vai começar.
-        # tente entender como o método send funciona!
-        # Cuidado! Apenas trasmitimos arrays de bytes! Nao listas!
-
-        txBuffer = np.array(txBuffer)
-        com1.sendData(np.asarray(txBuffer))
-
-        # A camada enlace possui uma camada inferior, TX possui um método para conhecermos o status da transmissão
-        # Tente entender como esse método funciona e o que ele retorna
-        txSize = com1.tx.getStatus()
-        # Agora vamos iniciar a recepção dos dados. Se algo chegou ao RX, deve estar automaticamente guardado
-        # Observe o que faz a rotina dentro do thread RX
-        # print um aviso de que a recepção vai começar.
-        print('\n---> A recepção vai começar!')
-        # Será que todos os bytes enviados estão realmente guardadas? Será que conseguimos verificar?
-        # Veja o que faz a funcao do enlaceRX  getBufferLen
-        buffer_size = com1.tx.getBufferLen()
-        print(f'---> Tamanho do buffer: {buffer_size} bytes')
-        print(
-            f'\n---> Tamanho da imagem = Tamanho do buffer? {buffer_size == img_size}')
-
-        # acesso aos bytes recebidos
-        txLen = len(txBuffer)
-        rxBuffer, nRx = com1.getData(txLen)
-        print("\nRecebido:\n {}\n" .format(rxBuffer))
-
-        output_image = Image.open(BytesIO(rxBuffer))
-        output_image.save('resources/out.bmp')
-
-        # Encerra comunicação
-        print("-----------------------------")
-        print("---> Comunicação encerrada")
-        com1.disable()
-
-        t2 = timeit.default_timer()
-        print(f'---> process took {t2 - t1} seconds')
-        print("-----------------------------")
+            if ans == 'error':
+                print('ERROOOOO')
 
     except Exception as erro:
         print("ops! :-\\")
         print(erro)
-        com1.disable()
+        server.disable()
 
 
-    # so roda o main quando for executado do terminal ... se for chamado dentro de outro modulo nao roda
 if __name__ == "__main__":
     main()
